@@ -325,6 +325,16 @@ function doGet(e) {
       return json_({ ok: true, message: 'Smart Receipt Apps Script çalışıyor' });
     }
 
+    // Haftalık e-posta özetini kuran tek seferlik uç nokta (secret korumalı).
+    // Editöre girip createWeeklyTrigger() çalıştırmaya gerek kalmıyor.
+    if (params.action === 'setup-weekly-email') {
+      createWeeklyTrigger();
+      const kurulu = ScriptApp.getProjectTriggers().filter(function (t) {
+        return t.getHandlerFunction() === 'weeklySummaryEmail';
+      }).length;
+      return json_({ ok: true, message: 'Haftalık özet trigger kuruldu', triggerSayisi: kurulu });
+    }
+
     const cache = CacheService.getScriptCache();
     const cacheKey = 'hist_' + (params.limit || '50') + '_' + dataVersion_();
     const cached = cache.get(cacheKey);
