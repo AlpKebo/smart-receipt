@@ -1,19 +1,26 @@
 @import "tailwindcss";
 
+/*
+ * Tek ve kararlı bir koyu tema: mürekkep mavisine çalan derin zemin,
+ * zümrüt vurgu. Sistem teması açık olsa da uygulama aynı görünür.
+ */
 :root {
-  --background: #f5f6f2;
-  --surface: #ffffff;
-  --surface-muted: #f1efea;
-  --foreground: #1c1a17;
-  --muted: #6f6a61;
-  --border: #e2ded6;
-  --accent: #1f6b4a;
-  --accent-soft: #e6f1ea;
-  --danger: #a83232;
-  --danger-soft: #fbeceb;
-  /* Arka plandaki yumuşak ışık lekeleri */
-  --glow-1: rgba(31, 107, 74, 0.1);
-  --glow-2: rgba(193, 148, 74, 0.09);
+  color-scheme: dark;
+
+  --background: #0d141a;
+  --surface: #141d26;
+  --surface-muted: #1b2733;
+  --foreground: #e9eef2;
+  --muted: #94a3b1;
+  --border: #253444;
+  --accent: #1f7a54;
+  --accent-soft: #d6ece0;
+  --danger: #d98078;
+  --danger-soft: #3a1f1e;
+
+  /* Zemindeki yumuşak ışık lekeleri */
+  --glow-1: rgba(45, 160, 112, 0.16);
+  --glow-2: rgba(180, 142, 74, 0.1);
 }
 
 @theme inline {
@@ -31,33 +38,23 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #14140f;
-    --surface: #1e1e18;
-    --surface-muted: #26261f;
-    --foreground: #ecebe5;
-    --muted: #a09a8e;
-    --border: #34342c;
-    --accent: #6cc79a;
-    --accent-soft: #1e3b2c;
-    --danger: #e5837b;
-    --danger-soft: #3a211f;
-    --glow-1: rgba(108, 199, 154, 0.13);
-    --glow-2: rgba(198, 158, 92, 0.1);
-  }
-}
-
 body {
-  /* Düz zemin yerine iki yumuşak ışık lekesi: sayfa sabit kalır, kaydırınca kaymaz. */
+  /* Düz zemin yerine iki yumuşak ışık lekesi: sabit durur, kaydırınca kaymaz. */
   background-color: var(--background);
   background-image:
-    radial-gradient(58rem 34rem at 8% -12%, var(--glow-1), transparent 62%),
-    radial-gradient(45rem 30rem at 102% 4%, var(--glow-2), transparent 58%);
+    radial-gradient(60rem 36rem at 6% -14%, var(--glow-1), transparent 60%),
+    radial-gradient(48rem 32rem at 104% 2%, var(--glow-2), transparent 56%);
   background-attachment: fixed;
   background-repeat: no-repeat;
   color: var(--foreground);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/* Koyu zeminde beyaz kart yerine hafif saydam yüzey daha iyi oturuyor. */
+input,
+select,
+textarea {
+  color-scheme: dark;
 }
 
 /* Sayı input'larındaki artırma okları tutarı yanlışlıkla değiştirebiliyor. */
