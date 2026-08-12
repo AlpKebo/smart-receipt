@@ -21,6 +21,8 @@ export default function SmartReceiptApp() {
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
+  const [dragging, setDragging] = useState(false);
 
   const [history, setHistory] = useState<HistoryReceipt[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
@@ -54,8 +56,9 @@ export default function SmartReceiptApp() {
     void loadHistory();
   }, [loadHistory]);
 
-  async function handleFiles(fileList: FileList | null) {
-    if (!fileList || fileList.length === 0) return;
+  async function handleFiles(fileList: FileList | File[] | null) {
+    const files = fileList ? Array.from(fileList) : [];
+    if (files.length === 0) return;
     setError(null);
     setNotice(null);
     setStatus("preparing");
@@ -63,7 +66,7 @@ export default function SmartReceiptApp() {
     const images: PreparedImage[] = [];
     const failed: string[] = [];
 
-    for (const file of Array.from(fileList)) {
+    for (const file of files) {
       if (!file.type.startsWith("image/")) {
         failed.push(`${file.name} (görsel değil)`);
         continue;
@@ -84,97 +87,131 @@ export default function SmartReceiptApp() {
     if (cameraInput.current) cameraInput.current.value = "";
   }
 
+  /**
+   * Her fotoğraf ayrı istekte gönderiliyor: hepsini tek gövdede yollamak
+   * base64 şişmesiyle Vercel'in ~4.5 MB istek sınırını aşıyordu. Ayrıca
+   * böylece ilerleme gösterilebiliyor ve biri patlarsa diğerleri etkilenmiyor.
+   */
   async function analyze() {
     if (pending.length === 0) return;
     setStatus("analyzing");
     setError(null);
     setNotice(null);
+    setProgress({ done: 0, total: pending.length });
 
-    try {
-      const response = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ images: pending.map((p) => p.dataUrl) }),
-      });
-      const data: AnalyzeResponse = await response.json();
-      if (!data.ok) throw new Error(data.error ?? "Analiz başarısız oldu.");
+    const analyzed: Receipt[] = [];
+    const failures: string[] = [];
 
-      const analyzed: Receipt[] = [];
-      const failures: string[] = [];
+    const jobs = pending.map(async (source, index) => {
+      try {
+        const response = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ images: [source.dataUrl] }),
+        });
+        const data: AnalyzeResponse = await response.json();
+        if (!data.ok) throw new Error(data.error ?? "Analiz başarısız oldu.");
 
-      for (const result of data.results ?? []) {
-        const source = pending[result.index];
-        if (!source) continue;
-        if (result.error) {
-          failures.push(source.fileName);
-          continue;
-        }
+        const result = data.results?.[0];
+        if (!result || result.error) throw new Error(result?.error ?? "Sonuç boş döndü.");
+
         // Bir fotoğrafta birden fazla fiş varsa hepsi ayrı kayıt olur (bonus).
         result.receipts.forEach((extracted, n) => {
           analyzed.push({
             ...extracted,
-            id: `${result.index}-${n}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            id: `${index}-${n}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             imageBase64: source.base64,
             imageMimeType: source.mimeType,
             previewUrl: source.dataUrl,
             sourceFileName: source.fileName,
           });
         });
+      } catch {
+        failures.push(source.fileName);
+      } finally {
+        setProgress((p) => ({ ...p, done: p.done + 1 }));
       }
+    });
 
-      setReceipts((prev) => [...prev, ...analyzed]);
-      setPending([]);
+    await Promise.all(jobs);
 
-      if (failures.length > 0) {
-        setError(`Analiz edilemeyen fotoğraflar: ${failures.join(", ")}`);
-      }
-      if (analyzed.length > 0) {
-        setNotice(`${analyzed.length} fiş okundu. Bilgileri kontrol edip düzeltebilirsin.`);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setStatus("idle");
+    setReceipts((prev) => [...prev, ...analyzed]);
+    // Okunamayan fotoğraflar listede kalsın ki kullanıcı tekrar deneyebilsin.
+    setPending((prev) => prev.filter((p) => failures.includes(p.fileName)));
+
+    if (failures.length > 0) {
+      setError(`Okunamayan fotoğraflar listede bırakıldı: ${failures.join(", ")}`);
     }
+    if (analyzed.length > 0) {
+      setNotice(`${analyzed.length} fiş okundu. Bilgileri kontrol edip düzeltebilirsin.`);
+    }
+    setStatus("idle");
   }
 
+  /**
+   * Fişler ikişerli gruplar hâlinde gönderiliyor — görseller base64 olduğu için
+   * hepsini tek gövdede yollamak istek boyutu sınırını aşabiliyor. Bir grup
+   * başarısız olursa kaydedilenler listeden düşer, kalanlar ekranda kalır.
+   */
   async function sendToSheets() {
     if (receipts.length === 0) return;
     setStatus("sending");
     setError(null);
     setNotice(null);
+    setProgress({ done: 0, total: receipts.length });
 
-    try {
-      const response = await fetch("/api/receipts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          receipts: receipts.map((r) => ({
-            merchant: r.merchant,
-            date: r.date,
-            time: r.time,
-            category: r.category,
-            total: r.total,
-            currency: r.currency,
-            tax: r.tax,
-            bankName: r.bankName,
-            items: r.items.map((i) => i.trim()).filter(Boolean),
-            imageBase64: r.imageBase64,
-            imageMimeType: r.imageMimeType,
-          })),
-        }),
-      });
-      const data = await response.json();
-      if (!data.ok) throw new Error(data.error ?? "Google Sheets'e gönderilemedi.");
+    const CHUNK = 2;
+    const queue = [...receipts];
+    let saved = 0;
+    let failure: string | null = null;
 
-      setNotice(`${data.saved} fiş Google Sheets'e kaydedildi ve görselleri Drive'a yüklendi.`);
-      setReceipts([]);
-      void loadHistory();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setStatus("idle");
+    while (queue.length > 0) {
+      const chunk = queue.splice(0, CHUNK);
+      try {
+        const response = await fetch("/api/receipts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            receipts: chunk.map((r) => ({
+              merchant: r.merchant,
+              date: r.date,
+              time: r.time,
+              category: r.category,
+              total: r.total,
+              currency: r.currency,
+              tax: r.tax,
+              bankName: r.bankName,
+              items: r.items.map((i) => i.trim()).filter(Boolean),
+              imageBase64: r.imageBase64,
+              imageMimeType: r.imageMimeType,
+            })),
+          }),
+        });
+        const data = await response.json();
+        if (!data.ok) throw new Error(data.error ?? "Google Sheets'e gönderilemedi.");
+
+        saved += chunk.length;
+        const sentIds = new Set(chunk.map((r) => r.id));
+        setReceipts((prev) => prev.filter((r) => !sentIds.has(r.id)));
+        setProgress((p) => ({ ...p, done: p.done + chunk.length }));
+      } catch (err) {
+        failure = err instanceof Error ? err.message : String(err);
+        break;
+      }
     }
+
+    if (saved > 0) {
+      setNotice(`${saved} fiş Google Sheets'e kaydedildi, görselleri Drive'a yüklendi.`);
+      void loadHistory();
+    }
+    if (failure) {
+      setError(
+        saved > 0
+          ? `${failure} — ${saved} fiş kaydedildi, kalanlar ekranda duruyor, tekrar deneyebilirsin.`
+          : failure,
+      );
+    }
+    setStatus("idle");
   }
 
   function updateReceipt(id: string, patch: Partial<Receipt>) {
@@ -184,7 +221,14 @@ export default function SmartReceiptApp() {
   const readyToSend =
     receipts.length > 0 && receipts.every((r) => r.merchant && r.date && r.total !== null);
 
-  const draftTotal = receipts.reduce((sum, r) => sum + (r.total ?? 0), 0);
+  // Farklı para birimlerini toplamak yanlış olur; her birini ayrı topluyoruz.
+  const totalsByCurrency = receipts.reduce<Record<string, number>>((acc, r) => {
+    if (r.total !== null) acc[r.currency] = (acc[r.currency] ?? 0) + r.total;
+    return acc;
+  }, {});
+  const draftTotals = Object.entries(totalsByCurrency)
+    .map(([currency, sum]) => formatAmount(sum, currency))
+    .join(" · ");
 
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
@@ -208,10 +252,25 @@ export default function SmartReceiptApp() {
       )}
 
       {/* 1 — Yükleme */}
-      <section className="mb-10 rounded-2xl border border-border bg-surface p-5 shadow-sm">
+      <section
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!busy) setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          if (!busy) void handleFiles(Array.from(e.dataTransfer.files));
+        }}
+        className={`mb-10 rounded-2xl border p-5 shadow-sm transition ${
+          dragging ? "border-accent bg-accent-soft" : "border-border bg-surface"
+        }`}
+      >
         <h2 className="text-lg font-semibold">1. Fiş Ekle</h2>
         <p className="mt-1 text-sm text-muted">
-          Birden fazla fotoğraf seçebilirsin. Her fotoğrafta tek fiş olması önerilir.
+          Birden fazla fotoğraf seçebilir ya da buraya sürükleyip bırakabilirsin. Her fotoğrafta tek
+          fiş olması önerilir.
         </p>
 
         <div className="mt-4 flex flex-wrap gap-3">
@@ -280,16 +339,42 @@ export default function SmartReceiptApp() {
               ))}
             </ul>
 
-            <button
-              type="button"
-              onClick={() => void analyze()}
-              disabled={busy}
-              className="mt-5 w-full rounded-lg bg-foreground px-4 py-3 text-sm font-semibold text-background transition hover:opacity-90 disabled:opacity-50 sm:w-auto sm:px-6"
-            >
-              {status === "analyzing"
-                ? "Analiz ediliyor… (bu 20-40 saniye sürebilir)"
-                : `Fişleri Analiz Et (${pending.length})`}
-            </button>
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void analyze()}
+                disabled={busy}
+                className="w-full rounded-lg bg-foreground px-4 py-3 text-sm font-semibold text-background transition hover:opacity-90 disabled:opacity-50 sm:w-auto sm:px-6"
+              >
+                {status === "analyzing"
+                  ? `Analiz ediliyor… ${progress.done}/${progress.total}`
+                  : `Fişleri Analiz Et (${pending.length})`}
+              </button>
+              {!busy && (
+                <button
+                  type="button"
+                  onClick={() => setPending([])}
+                  className="text-sm font-medium text-muted underline underline-offset-4 transition hover:text-foreground"
+                >
+                  Tümünü kaldır
+                </button>
+              )}
+            </div>
+
+            {status === "analyzing" && (
+              <div
+                className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-surface-muted"
+                role="progressbar"
+                aria-valuenow={progress.done}
+                aria-valuemin={0}
+                aria-valuemax={progress.total}
+              >
+                <div
+                  className="h-full rounded-full bg-accent transition-all duration-300"
+                  style={{ width: `${(progress.done / Math.max(progress.total, 1)) * 100}%` }}
+                />
+              </div>
+            )}
           </>
         )}
       </section>
@@ -302,9 +387,7 @@ export default function SmartReceiptApp() {
               <h2 className="text-lg font-semibold">2. Kontrol Et ve Düzelt</h2>
               <p className="text-sm text-muted">
                 {receipts.length} fiş · toplam{" "}
-                <strong className="text-foreground">
-                  {formatAmount(draftTotal, receipts[0]?.currency ?? "TRY")}
-                </strong>
+                <strong className="text-foreground">{draftTotals || "—"}</strong>
               </p>
             </div>
             <button
@@ -314,7 +397,9 @@ export default function SmartReceiptApp() {
               title={readyToSend ? undefined : "Her fişte mağaza adı, tarih ve toplam tutar dolu olmalı."}
               className="rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
             >
-              {status === "sending" ? "Gönderiliyor…" : "Google Sheets'e Gönder"}
+              {status === "sending"
+                ? `Gönderiliyor… ${progress.done}/${progress.total}`
+                : "Google Sheets'e Gönder"}
             </button>
           </div>
 
