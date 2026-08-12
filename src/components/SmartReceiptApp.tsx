@@ -23,6 +23,8 @@ export default function SmartReceiptApp() {
   const [notice, setNotice] = useState<string | null>(null);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [dragging, setDragging] = useState(false);
+  /** Büyütülmüş fiş görseli — alanları düzeltirken fişi okuyabilmek için. */
+  const [zoomed, setZoomed] = useState<{ src: string; alt: string } | null>(null);
 
   const [history, setHistory] = useState<HistoryReceipt[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
@@ -272,11 +274,22 @@ export default function SmartReceiptApp() {
       {(error || notice) && (
         <div
           role="status"
-          className={`mb-6 rounded-xl px-4 py-3 text-sm ${
+          className={`mb-6 flex items-start gap-3 rounded-xl px-4 py-3 text-sm ${
             error ? "bg-danger-soft text-danger" : "bg-accent-soft text-accent"
           }`}
         >
-          {error ?? notice}
+          <span className="flex-1">{error ?? notice}</span>
+          <button
+            type="button"
+            aria-label="Mesajı kapat"
+            onClick={() => {
+              setError(null);
+              setNotice(null);
+            }}
+            className="shrink-0 rounded px-1 text-base leading-none opacity-70 transition hover:opacity-100"
+          >
+            ×
+          </button>
         </div>
       )}
 
@@ -301,6 +314,28 @@ export default function SmartReceiptApp() {
           Birden fazla fotoğraf seçebilir ya da buraya sürükleyip bırakabilirsin. Her fotoğrafta tek
           fiş olması önerilir.
         </p>
+
+        {pending.length === 0 && status !== "preparing" && (
+          <div className="mt-4 rounded-xl border border-dashed border-border px-4 py-8 text-center">
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden
+              className="mx-auto h-9 w-9 text-muted"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 16V4m0 0L8 8m4-4 4 4" />
+              <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+            </svg>
+            <p className="mt-3 text-sm font-medium">Fotoğrafları buraya sürükle</p>
+            <p className="mt-1 text-xs text-muted">
+              ya da aşağıdaki butonları kullan · JPG, PNG · aynı anda birden fazla
+            </p>
+          </div>
+        )}
 
         <div className="mt-4 flex flex-wrap gap-3">
           <button
@@ -345,16 +380,21 @@ export default function SmartReceiptApp() {
             <ul className="mt-5 grid grid-cols-3 gap-3 sm:grid-cols-5">
               {pending.map((p, i) => (
                 <li key={`${p.fileName}-${i}`} className="group relative">
-                  <div className="relative aspect-[3/4] overflow-hidden rounded-xl border border-border bg-surface-muted">
+                  <button
+                    type="button"
+                    onClick={() => setZoomed({ src: p.dataUrl, alt: p.fileName })}
+                    title="Büyütmek için tıkla"
+                    className="relative block aspect-[3/4] w-full overflow-hidden rounded-xl border border-border bg-surface-muted"
+                  >
                     <Image
                       src={p.dataUrl}
                       alt={`${p.fileName} önizlemesi`}
                       fill
                       unoptimized
                       sizes="(max-width: 640px) 33vw, 20vw"
-                      className="object-cover"
+                      className="object-cover transition group-hover:scale-105"
                     />
-                  </div>
+                  </button>
                   <button
                     type="button"
                     aria-label={`${p.fileName} fotoğrafını kaldır`}
@@ -440,6 +480,7 @@ export default function SmartReceiptApp() {
                 index={i}
                 onChange={updateReceipt}
                 onRemove={(id) => setReceipts((prev) => prev.filter((x) => x.id !== id))}
+                onZoom={(src, alt) => setZoomed({ src, alt })}
                 disabled={busy}
               />
             ))}
@@ -454,6 +495,53 @@ export default function SmartReceiptApp() {
         error={historyError}
         onRefresh={() => void loadHistory()}
       />
+
+      {/* Mobilde gönder butonu ekranın altında sabit dursun; uzun listede kaybolmasın. */}
+      {receipts.length > 0 && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface/95 px-4 py-3 backdrop-blur sm:hidden">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm">
+              <span className="block text-xs text-muted">{receipts.length} fiş</span>
+              <strong>{draftTotals || "—"}</strong>
+            </span>
+            <button
+              type="button"
+              onClick={() => void sendToSheets()}
+              disabled={busy || !readyToSend}
+              className="rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white transition disabled:opacity-50"
+            >
+              {status === "sending" ? `${progress.done}/${progress.total}` : "Sheets'e Gönder"}
+            </button>
+          </div>
+        </div>
+      )}
+      {receipts.length > 0 && <div className="h-20 sm:hidden" aria-hidden />}
+
+      {/* Görsel büyütme */}
+      {zoomed && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${zoomed.alt} — büyütülmüş görünüm`}
+          onClick={() => setZoomed(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+        >
+          <button
+            type="button"
+            aria-label="Kapat"
+            onClick={() => setZoomed(null)}
+            className="absolute right-4 top-4 rounded-full bg-white/10 px-3 py-1.5 text-sm text-white transition hover:bg-white/20"
+          >
+            Kapat ✕
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={zoomed.src}
+            alt={zoomed.alt}
+            className="max-h-full max-w-full rounded-lg object-contain shadow-2xl"
+          />
+        </div>
+      )}
     </main>
   );
 }

@@ -11,6 +11,18 @@ type Props = {
 };
 
 export default function HistoryPanel({ receipts, loading, error, onRefresh }: Props) {
+  // Bu ayın özeti — Sheet'e gitmeden durumu görebilmek için.
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  const monthly = receipts.filter((r) => (r.date ?? "").startsWith(thisMonth));
+  const monthlyTotals = monthly.reduce<Record<string, number>>((acc, r) => {
+    const n = typeof r.total === "number" ? r.total : Number(r.total);
+    if (Number.isFinite(n)) acc[r.currency || "TRY"] = (acc[r.currency || "TRY"] ?? 0) + n;
+    return acc;
+  }, {});
+  const monthlyLabel = Object.entries(monthlyTotals)
+    .map(([currency, sum]) => formatAmount(sum, currency))
+    .join(" · ");
+
   return (
     <section className="space-y-4">
       <div className="flex items-center justify-between gap-3">
@@ -27,6 +39,25 @@ export default function HistoryPanel({ receipts, loading, error, onRefresh }: Pr
           {loading ? "Yükleniyor…" : "Yenile"}
         </button>
       </div>
+
+      {monthly.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-border bg-surface px-4 py-3">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted">Bu ay toplam</p>
+            <p className="text-xl font-semibold">{monthlyLabel}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted">Fiş</p>
+            <p className="text-xl font-semibold">{monthly.length}</p>
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs uppercase tracking-wide text-muted">Kategoriler</p>
+            <p className="truncate text-sm">
+              {[...new Set(monthly.map((r) => r.category).filter(Boolean))].join(", ") || "—"}
+            </p>
+          </div>
+        </div>
+      )}
 
       {error && (
         <p className="rounded-xl bg-danger-soft px-4 py-3 text-sm text-danger">

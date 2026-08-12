@@ -14,11 +14,22 @@ type Props = {
   index: number;
   onChange: (id: string, patch: Partial<Receipt>) => void;
   onRemove: (id: string) => void;
+  onZoom: (src: string, alt: string) => void;
   disabled?: boolean;
 };
 
-export default function ReceiptCard({ receipt, index, onChange, onRemove, disabled }: Props) {
+export default function ReceiptCard({
+  receipt,
+  index,
+  onChange,
+  onRemove,
+  onZoom,
+  disabled,
+}: Props) {
   const missing = !receipt.merchant || !receipt.date || receipt.total === null;
+
+  /** Zorunlu alan boşsa input'un kendisi işaretlensin, kullanıcı aramasın. */
+  const need = (empty: boolean) => (empty ? `${fieldClass} border-danger` : fieldClass);
 
   return (
     <article className="overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
@@ -47,7 +58,12 @@ export default function ReceiptCard({ receipt, index, onChange, onRemove, disabl
 
       <div className="grid gap-5 p-4 sm:grid-cols-[180px_1fr]">
         <div className="space-y-2">
-          <div className="relative aspect-[3/4] overflow-hidden rounded-xl border border-border bg-surface-muted">
+          <button
+            type="button"
+            onClick={() => onZoom(receipt.previewUrl, receipt.sourceFileName)}
+            title="Fişi büyüt"
+            className="group relative block aspect-[3/4] w-full overflow-hidden rounded-xl border border-border bg-surface-muted"
+          >
             <Image
               src={receipt.previewUrl}
               alt={`${receipt.merchant || "Fiş"} görseli`}
@@ -56,7 +72,10 @@ export default function ReceiptCard({ receipt, index, onChange, onRemove, disabl
               sizes="180px"
               className="object-cover"
             />
-          </div>
+            <span className="absolute inset-x-0 bottom-0 bg-black/55 py-1 text-center text-[11px] text-white opacity-0 transition group-hover:opacity-100">
+              Büyütmek için tıkla
+            </span>
+          </button>
           <p className="truncate text-xs text-muted" title={receipt.sourceFileName}>
             {receipt.sourceFileName}
           </p>
@@ -69,7 +88,7 @@ export default function ReceiptCard({ receipt, index, onChange, onRemove, disabl
             </label>
             <input
               id={`merchant-${receipt.id}`}
-              className={fieldClass}
+              className={need(!receipt.merchant)}
               value={receipt.merchant}
               disabled={disabled}
               onChange={(e) => onChange(receipt.id, { merchant: e.target.value })}
@@ -84,7 +103,7 @@ export default function ReceiptCard({ receipt, index, onChange, onRemove, disabl
             <input
               id={`date-${receipt.id}`}
               type="date"
-              className={fieldClass}
+              className={need(!receipt.date)}
               value={receipt.date}
               disabled={disabled}
               onChange={(e) => onChange(receipt.id, { date: e.target.value })}
@@ -114,7 +133,7 @@ export default function ReceiptCard({ receipt, index, onChange, onRemove, disabl
               type="number"
               step="0.01"
               inputMode="decimal"
-              className={fieldClass}
+              className={need(receipt.total === null)}
               value={receipt.total ?? ""}
               disabled={disabled}
               onChange={(e) => onChange(receipt.id, { total: toNumber(e.target.value) })}
