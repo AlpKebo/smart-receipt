@@ -232,12 +232,41 @@ export default function SmartReceiptApp() {
 
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
-      <header className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Smart Receipt</h1>
-        <p className="mt-2 text-muted">
-          Fiş fotoğraflarını yükle, yapay zekâ bilgileri okusun, kontrol et ve tek tuşla Google
-          Sheets&apos;e gönder.
+      <header className="mb-10">
+        <span className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-muted">
+          <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+          Yapay zekâ destekli harcama takibi
+        </span>
+
+        <h1 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">Smart Receipt</h1>
+
+        <p className="mt-3 max-w-2xl leading-relaxed text-muted">
+          Fiş fotoğraflarınızı yükleyin; yapay zekâ mağaza adı, tarih, tutar, para birimi, KDV,
+          banka ve ürün bilgilerini otomatik olarak okusun. Onayladığınız kayıtlar Google
+          Sheets&apos;e satır olarak eklenir, fiş görselleri Google Drive&apos;da saklanır; aylık
+          toplamınız ve kategori dağılımınız kendiliğinden güncellenir.
         </p>
+
+        <ol className="mt-6 grid gap-3 sm:grid-cols-3">
+          {[
+            { n: "1", t: "Yükle", d: "Bilgisayardan seç, sürükle bırak ya da kamerayla çek." },
+            { n: "2", t: "Kontrol Et", d: "Yapay zekânın okuduğu alanları gözden geçir, düzelt." },
+            { n: "3", t: "Kaydet", d: "Tek tuşla Google Sheets ve Drive'a aktar." },
+          ].map((s) => (
+            <li
+              key={s.n}
+              className="flex gap-3 rounded-xl border border-border bg-surface/70 px-4 py-3 backdrop-blur-sm"
+            >
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent-soft text-xs font-semibold text-accent">
+                {s.n}
+              </span>
+              <span>
+                <span className="block text-sm font-semibold">{s.t}</span>
+                <span className="block text-xs leading-relaxed text-muted">{s.d}</span>
+              </span>
+            </li>
+          ))}
+        </ol>
       </header>
 
       {(error || notice) && (
